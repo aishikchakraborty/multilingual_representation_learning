@@ -57,18 +57,26 @@ sentence_list_test = get_sentence_list(os.path.join(args.data, 'wiki.test.tokens
 def create_bert_tokens(sentence_list):
     input_sequence = []
     masked_labels_seq = []
-    for sentence in sentence_list:
+    for sentence in tqdm(sentence_list):
         tokens = tokenizer.tokenize(sentence)
         tokens = ['[CLS]'] + tokens + ['[SEP]']
-        bert_input = [tokenizer.convert_tokens_to_ids('[MASK]') if t in biling_dict.keys() else tokenizer.convert_tokens_to_ids(t) for t in tokens]
-        masked_labels = [tokenizer.convert_tokens_to_ids(biling_dict[t]) if t in biling_dict.keys() else -100 for t in tokens]
+        bert_input = tokenizer.convert_tokens_to_ids(['[MASK]' if t in biling_dict.keys() else t for t in tokens])
+        mask = tokenizer.get_special_tokens_mask(bert_input, already_has_special_tokens=True)
+        # print(bert_input)
+        # print(mask)
+        masked_labels = [a*b for a,b in zip(bert_input, mask)]
+        masked_labels = [-1 if m==0 else m for m in masked_labels]
+        #  [tokenizer.convert_tokens_to_ids(biling_dict[t]) if t in biling_dict.keys() else -1 for t in tokens]
         input_sequence.append(bert_input)
         masked_labels_seq.append(masked_labels)
 
     return input_sequence, masked_labels_seq
 
+print('Train')
 train_input_sequence, train_masked_labels_seq = create_bert_tokens(sentence_list_train)
+print('Val')
 val_input_sequence, val_masked_labels_seq = create_bert_tokens(sentence_list_val)
+print('Test')
 test_input_sequence, test_masked_labels_seq = create_bert_tokens(sentence_list_test)
 
 train = (train_input_sequence, train_masked_labels_seq)
@@ -81,11 +89,3 @@ pickle.dump(test, open('data/test_' + args.src + '_' + args.tgt , 'wb'))
 
 print(train_input_sequence[:5])
 print(train_masked_labels_seq[:5])
-
-
-
-
-
-
-
-
