@@ -1,4 +1,5 @@
 import os
+import random
 import ast
 import json
 import numpy as np
@@ -14,7 +15,7 @@ from transformers import BertTokenizer
 
 
 parser = argparse.ArgumentParser(description='Preprocessing wikipedia files')
-parser.add_argument('--data', type=str, default='data/wikitext-103/',
+parser.add_argument('--data', type=str, default='data/wikitext-2/',
                     help='location of the data corpus')
 
 parser.add_argument('--dictionary', type=str, default='data/',
@@ -61,12 +62,17 @@ def create_bert_tokens(sentence_list):
         tokens = tokenizer.tokenize(sentence)
         tokens = ['[CLS]'] + tokens + ['[SEP]']
         bert_input = tokenizer.convert_tokens_to_ids(['[MASK]' if t in biling_dict.keys() else t for t in tokens])
-        mask = tokenizer.get_special_tokens_mask(bert_input, already_has_special_tokens=True)
+        #mask = tokenizer.get_special_tokens_mask(bert_input, already_has_special_tokens=True)
+		
         # print(bert_input)
         # print(mask)
-        masked_labels = [a*b for a,b in zip(bert_input, mask)]
-        masked_labels = [-1 if m==0 else m for m in masked_labels]
-        #  [tokenizer.convert_tokens_to_ids(biling_dict[t]) if t in biling_dict.keys() else -1 for t in tokens]
+        #masked_labels = [a*b for a,b in zip(bert_input, mask)]
+        #masked_labels = [-1 if m==0 else m for m in masked_labels]
+        masked_labels = [tokenizer.convert_tokens_to_ids(biling_dict[t]) if t in biling_dict.keys() else -100 for t in tokens]
+        # masked_labels[0]=bert_input[0]
+        # masked_labels[-1]=bert_input[-1]
+        if all([x == -1 for x in masked_labels]):
+            continue
         input_sequence.append(bert_input)
         masked_labels_seq.append(masked_labels)
 
@@ -87,5 +93,5 @@ pickle.dump(train, open('data/train_' + args.src + '_' + args.tgt , 'wb'))
 pickle.dump(val, open('data/val_' + args.src + '_' + args.tgt , 'wb'))
 pickle.dump(test, open('data/test_' + args.src + '_' + args.tgt , 'wb'))
 
-print(train_input_sequence[:5])
-print(train_masked_labels_seq[:5])
+print(train_input_sequence[:20])
+print(train_masked_labels_seq[:20])

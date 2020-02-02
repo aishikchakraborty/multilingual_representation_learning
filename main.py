@@ -26,8 +26,8 @@ parser.add_argument('--numpy_seed', type=int, default=1337, help='numpy random s
 parser.add_argument('--torch_seed', type=int, default=133, help='pytorch random seed')
 parser.add_argument('--lr', type=float, default=2e-5, help='Learning rate')
 parser.add_argument('--grad-clip', type=float, default=0.25, help='Gradient clipping')
-parser.add_argument('--batch-size', type=int, default=20, help='Batch Size')
-parser.add_argument('--epochs', type=int, default=5, help='Epochs')
+parser.add_argument('--batch-size', type=int, default=10, help='Batch Size')
+parser.add_argument('--epochs', type=int, default=1, help='Epochs')
 parser.add_argument('--hidden-dim', type=int, default=100, help='Hidden Dimensions of the decoder')
 parser.add_argument('--num-layers', type=int, default=1, help='Number of layers of the sequence model')
 parser.add_argument('--gpu', type=int, default=0, help='GPU id')
@@ -83,21 +83,23 @@ def pad_sequences(s, pad_token):
     return padded_X, masked_X
 
 vocab_bert = []
-f = open(os.path.join(args.data, 'wikitext-103', 'vocab.txt'))
+f = open(os.path.join(args.data, 'wikitext-2', 'vocab.txt'))
 for lines in f:
     vocab_bert.append(lines.strip())
 w2idx = {w:idx for idx, w in enumerate(vocab_bert)}
 
-model = BertForMaskedLM.from_pretrained('bert-base-multilingual-uncased')
+model = BertForMaskedLM.from_pretrained('bert-base-multilingual-uncased').to(device)
 model.eval()
 optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
 def evaluate(data):
     val_loss = 0
     data_input, data_masked = data[0], data[1]
+    print(len(data_input))
     num_batches = len(data_input)//args.batch_size
     with torch.no_grad():
         for i in tqdm(range(num_batches)):
+            
             batch_input, attn_mask = pad_sequences(data_input[i*args.batch_size:(i+1)*args.batch_size], w2idx['[PAD]'])
             batch_masked_outputs, _ = pad_sequences(data_masked[i*args.batch_size:(i+1)*args.batch_size], w2idx['[PAD]'])
 
@@ -108,6 +110,9 @@ def evaluate(data):
             outputs = model(batch_input, attention_mask=attn_mask, masked_lm_labels=batch_masked_outputs)
             loss, prediction_scores = outputs[:2]
             val_loss += loss.item()
+            # except:
+            #     print(data_input[i*args.batch_size:(i+1)*args.batch_size])
+            #     print(data_masked[i*args.batch_size:(i+1)*args.batch_size])
             
     return val_loss/num_batches
 
@@ -116,7 +121,7 @@ for epoch in range(args.epochs):
     train_loss = 0
     best_val_loss = 1000000
     num_batches = len(train_input_seq)//args.batch_size
-    for i in tqdm(range(num_batches)):
+    for i in tqdm(range(1000)):
         batch_input, attn_mask = pad_sequences(train_input_seq[i*args.batch_size:(i+1)*args.batch_size], w2idx['[PAD]'])
         batch_masked_outputs, _ = pad_sequences(train_masked_lm_seq[i*args.batch_size:(i+1)*args.batch_size], w2idx['[PAD]'])
 
@@ -131,20 +136,21 @@ for epoch in range(args.epochs):
         loss.backward()
         optimizer.step()
 
-        if i%args.log_interval == 0:
+        if i%args.log_interval == 0 and i>0:
             message = "Train epoch: %d  iter: %d train MLM loss: %1.3f  " % (epoch, i, train_loss/args.log_interval)
             print(message)
             train_loss = 0
         
-            val_loss = evaluate((val_input_seq , val_masked_lm_seq))
-            message = "Val for Train epoch: %d  iter: %d val MLM loss: %1.3f  " % (epoch, i, val_loss)
-            print(message)
-            if best_val_loss > val_loss:
-                best_val_loss = val_loss
-                torch.save(model, 'models/model.pt')
+    val_loss = evaluate((val_input_seq , val_masked_lm_seq))
+    print(len(val_input_seq))
+    message = "Val for Train epoch: %d  iter: %d val MLM loss: %1.3f  " % (epoch, i, val_loss)
+    print(message)
+    if best_val_loss > val_loss:
+        best_val_loss = val_loss
+        torch.save(model, 'models/model.pt')
         
 
-model = torch.load('models/model.pt')
+# model = torch.load('models/model.pt')
 test_loss = evaluate((test_input_seq , test_masked_lm_seq))
 message = "Test MLM loss: %1.3f  " % (test_loss)
 print(message)
