@@ -13,6 +13,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import wandb
 from transformers import *
+import json
 
 # wandb login 75896b1ec51fe81d94a454defeb033dd0180a941
 
@@ -92,8 +93,22 @@ model = BertForMaskedLM.from_pretrained('bert-base-multilingual-uncased').to(dev
 model.eval()
 optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
+def token_accuracy(pred_scores, masked_lm_seq):
+    # print(masked_lm_seq)
+    masked_examples = 1 - (masked_lm_seq == torch.LongTensor([-100]).expand_as(masked_lm_seq).to(device)).long()
+    pred_tokens = torch.argmax(pred_scores, dim=-1)
+    correct_tokens_indices = (pred_tokens == masked_lm_seq).long() * masked_examples
+    total_correct = torch.sum(correct_tokens_indices).item()
+    total_examples = torch.sum(masked_examples).item()
+
+    return total_correct/total_examples
+
+def get_token_MRR(pred_scores, masked_lm_seq):
+    pass
+
 def evaluate(data):
     val_loss = 0
+    tok_acc = 0
     data_input, data_masked = data[0], data[1]
     print(len(data_input))
     num_batches = len(data_input)//args.batch_size
@@ -110,18 +125,19 @@ def evaluate(data):
             outputs = model(batch_input, attention_mask=attn_mask, masked_lm_labels=batch_masked_outputs)
             loss, prediction_scores = outputs[:2]
             val_loss += loss.item()
+            tok_acc += token_accuracy(prediction_scores, batch_masked_outputs)
+
             # except:
             #     print(data_input[i*args.batch_size:(i+1)*args.batch_size])
             #     print(data_masked[i*args.batch_size:(i+1)*args.batch_size])
-            
-    return val_loss/num_batches
+    return val_loss/num_batches, tok_acc/num_batches
 
 
 for epoch in range(args.epochs):
     train_loss = 0
     best_val_loss = 1000000
     num_batches = len(train_input_seq)//args.batch_size
-    for i in tqdm(range(1000)):
+    for i in tqdm(range(num_batches)):
         batch_input, attn_mask = pad_sequences(train_input_seq[i*args.batch_size:(i+1)*args.batch_size], w2idx['[PAD]'])
         batch_masked_outputs, _ = pad_sequences(train_masked_lm_seq[i*args.batch_size:(i+1)*args.batch_size], w2idx['[PAD]'])
 
@@ -141,7 +157,7 @@ for epoch in range(args.epochs):
             print(message)
             train_loss = 0
         
-    val_loss = evaluate((val_input_seq , val_masked_lm_seq))
+    val_loss, _ = evaluate((val_input_seq , val_masked_lm_seq))
     print(len(val_input_seq))
     message = "Val for Train epoch: %d  iter: %d val MLM loss: %1.3f  " % (epoch, i, val_loss)
     print(message)
@@ -150,7 +166,12 @@ for epoch in range(args.epochs):
         torch.save(model, 'models/model.pt')
         
 
+
 # model = torch.load('models/model.pt')
-test_loss = evaluate((test_input_seq , test_masked_lm_seq))
-message = "Test MLM loss: %1.3f  " % (test_loss)
+test_loss, tok_acc = evaluate((test_input_seq , test_masked_lm_seq))
+
+message = "Test MLM loss: %1.3f Token Accuracy: %1.3f " % (test_loss, tok_acc*100)
 print(message)
+f = open('outputs/results_' + args.src + '-' + args.tgt + '_epochs_' + str(args.epochs), 'w')
+d = {"test_loss": test_loss, "test token acc": tok_acc*100}
+f.write(str(json.dumps(d)) + '\n')
