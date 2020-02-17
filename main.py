@@ -103,12 +103,27 @@ def token_accuracy(pred_scores, masked_lm_seq):
 
     return total_correct/total_examples
 
+def token_topk_accuracy(pred_scores, masked_lm_seq, k=100):
+    # print(masked_lm_seq)
+    masked_examples = 1 - (masked_lm_seq == torch.LongTensor([-100]).expand_as(masked_lm_seq).to(device)).long()
+    _, pred_tokens = torch.topk(pred_scores, k, dim=-1)
+    # print(masked_examples.size())
+    correct_tokens_indices = pred_tokens.eq((masked_lm_seq.unsqueeze(dim=-1)).expand_as(pred_tokens)) * (masked_examples.unsqueeze(dim=-1)).expand_as(pred_tokens)
+    # * masked_examples
+    # print(correct_tokens_indices.size())
+    # correct_tokens_indices = (pred_tokens == masked_lm_seq).long() * masked_examples
+    total_correct = torch.sum(correct_tokens_indices).item()
+    total_examples = torch.sum(masked_examples).item()
+
+    return total_correct/total_examples
+
 def get_token_MRR(pred_scores, masked_lm_seq):
     pass
 
 def evaluate(data):
     val_loss = 0
     tok_acc = 0
+    tok_top5 = 0
     data_input, data_masked = data[0], data[1]
     print(len(data_input))
     num_batches = len(data_input)//args.batch_size
@@ -126,11 +141,12 @@ def evaluate(data):
             loss, prediction_scores = outputs[:2]
             val_loss += loss.item()
             tok_acc += token_accuracy(prediction_scores, batch_masked_outputs)
+            tok_top5 += token_topk_accuracy(prediction_scores, batch_masked_outputs)
 
             # except:
             #     print(data_input[i*args.batch_size:(i+1)*args.batch_size])
             #     print(data_masked[i*args.batch_size:(i+1)*args.batch_size])
-    return val_loss/num_batches, tok_acc/num_batches
+    return val_loss/num_batches, tok_acc/num_batches, tok_top5/num_batches
 
 
 for epoch in range(args.epochs):
@@ -168,10 +184,10 @@ for epoch in range(args.epochs):
 
 
 # model = torch.load('models/model.pt')
-test_loss, tok_acc = evaluate((test_input_seq , test_masked_lm_seq))
+test_loss, tok_acc, tok_top5 = evaluate((test_input_seq , test_masked_lm_seq))
 
-message = "Test MLM loss: %1.3f Token Accuracy: %1.3f " % (test_loss, tok_acc*100)
+message = "Test MLM loss: %1.3f Token Accuracy: %1.3f Token Top100 Accuracy: %1.3f" % (test_loss, tok_acc*100, tok_top5*100)
 print(message)
 f = open('outputs/results_' + args.src + '-' + args.tgt + '_epochs_' + str(args.epochs), 'w')
-d = {"test_loss": test_loss, "test token acc": tok_acc*100}
+d = {"test_loss": test_loss, "test token acc": tok_acc*100, "test top 100": tok_top5*100}
 f.write(str(json.dumps(d)) + '\n')
